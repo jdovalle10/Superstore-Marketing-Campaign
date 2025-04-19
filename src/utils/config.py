@@ -1,6 +1,7 @@
-import yaml
-from pathlib import Path
 import os
+from pathlib import Path
+
+import yaml
 
 
 def load_config(config_path="config.yaml"):
@@ -15,15 +16,15 @@ def load_config(config_path="config.yaml"):
     """
     # Get the absolute path to ensure file is found regardless of where code is executed from
     config_file = Path(config_path).resolve()
-    
+
     # Check if configuration file exists
     if not config_file.exists():
         raise FileNotFoundError(f"Configuration file not found at {config_file}")
-    
+
     # Load the YAML file
     with open(config_file, "r") as f:
         config = yaml.safe_load(f)
-    
+
     return config
 
 
@@ -39,7 +40,7 @@ def get_data_paths(config=None):
     """
     if config is None:
         config = load_config()
-    
+
     return config.get("data", {})
 
 
@@ -57,9 +58,9 @@ def get_model_config(model_name, tuned=False, config=None):
     """
     if config is None:
         config = load_config()
-    
+
     model_type = "tuned" if tuned else "baseline"
-    
+
     try:
         return config["models"][model_name][model_type]
     except KeyError:
@@ -79,7 +80,7 @@ def get_preprocessing_config(config=None):
     """
     if config is None:
         config = load_config()
-    
+
     return config.get("preprocessing", {})
 
 
@@ -95,7 +96,7 @@ def get_training_config(config=None):
     """
     if config is None:
         config = load_config()
-    
+
     return config.get("training", {})
 
 
@@ -111,7 +112,7 @@ def get_paths(config=None):
     """
     if config is None:
         config = load_config()
-    
+
     return config.get("paths", {})
 
 
@@ -120,6 +121,6 @@ def create_directories():
     Create directories for saving artifacts based on the configuration.
     """
     paths = get_paths()
-    
+
     for path_name, path_value in paths.items():
         os.makedirs(path_value, exist_ok=True)
