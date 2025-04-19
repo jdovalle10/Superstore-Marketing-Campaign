@@ -1,5 +1,5 @@
 import pytest
-from utils.config import load_config, get_data_paths
+from src.utils.config import load_config, get_data_paths
 
 def test_data_paths_roundtrip(tmp_path, monkeypatch):
     # 1) Create a temp YAML

@@ -4,16 +4,20 @@ from pathlib import Path
 import yaml
 
 
-def load_config(config_path="config.yaml"):
+def load_config(config_path=None):
     """
     Load the configuration from a YAML file.
     
     Parameters:
-        config_path (str): Path to the configuration file.
+        config_path (str, optional): Path to the configuration file. If None, uses CONFIG_PATH env var or defaults to config.yaml.
         
     Returns:
         dict: Configuration dictionary.
     """
+    # First check environment variable, then use provided path or default
+    if config_path is None:
+        config_path = os.environ.get("CONFIG_PATH", "config.yaml")
+    
     # Get the absolute path to ensure file is found regardless of where code is executed from
     config_file = Path(config_path).resolve()
 

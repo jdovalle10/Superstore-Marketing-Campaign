@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "ML pipeline for Superstore marketing campaign"
 authors = ["Arturo Medina <arturo-mn@outlook.com>"]
 license = "MIT"
+packages = [
+    {include = "src"},
+    {include = "utils"}
+]
 
 [tool.poetry.dependencies]
 python = "^3.10"

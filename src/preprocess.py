@@ -7,7 +7,7 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
-from utils.config import (
+from src.utils.config import (
     create_directories,
     get_data_paths,
     get_preprocessing_config,
@@ -47,11 +47,9 @@ def handle_missing_values(data):
     drop_threshold = missing_values_config.get("drop_threshold", 0.7)
     logger.info(f"Dropping columns with more than {drop_threshold*100}% missing values")
 
-    cols_to_drop = []
-    for col in data.columns:
-        missing_pct = data[col].isnull().mean()
-        if missing_pct > drop_threshold:
-            cols_to_drop.append(col)
+    # Calculate missing percentage for all columns at once
+    missing_percentages = data.isnull().mean()
+    cols_to_drop = missing_percentages[missing_percentages > drop_threshold].index.tolist()
 
     if cols_to_drop:
         logger.info(f"Dropping columns: {cols_to_drop}")
