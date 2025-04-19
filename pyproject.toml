@@ -14,7 +14,14 @@ optuna = "^4.3.0"
 [tool.poetry.dev-dependencies]
 ruff = "^0.11.6"
 nbqa = "^1.9.1"
+pytest = "^8.3.5"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--strict-markers"
+testpaths = ["tests"]
+
