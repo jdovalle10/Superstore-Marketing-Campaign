@@ -34,6 +34,9 @@ from utils.config import (
     load_config,
 )
 
+# Import MLflow utilities
+from utils.mlflow_utils import setup_mlflow, log_model_metrics, log_best_model
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -257,7 +260,7 @@ def get_model(model_name, tuned=False):
         raise ValueError(f"Model {model_name} not supported")
 
 
-def train_model(model, X_train, y_train, X_val, y_val, cat_features=None):
+def train_model(model, X_train, y_train, X_val, y_val, cat_features=None, run_id=None, model_name=None, tuned=False):
     """Train a model and evaluate on validation set."""
     # Train the model
     logger.info(f"Training {type(model).__name__}")
@@ -310,12 +313,11 @@ def train_model(model, X_train, y_train, X_val, y_val, cat_features=None):
                 # Identify potential categorical features (object or category dtype)
                 cat_features_indices = []
                 for i, col in enumerate(X_train.columns):
-                    #if X_train[col].dtype == 'object' or X_train[col].dtype.name == 'category' or 'education_' in col or 'marital_status_' in col:
-                     if (
-                          X_train[col].dtype == "object"
-                          or "education_" in col
-                          or "marital_status_" in col
-                        ):
+                    if (
+                        X_train[col].dtype == "object"
+                        or "education_" in col
+                        or "marital_status_" in col
+                    ):
                         cat_features_indices.append(i)
 
                 if cat_features_indices:
@@ -388,7 +390,47 @@ def train_model(model, X_train, y_train, X_val, y_val, cat_features=None):
         # Attach the column mapping to the model for later use
         model.column_mapping = new_columns
 
-    return model, metrics
+    # Extract feature importance if available
+    feature_importance = None
+    if hasattr(model, "feature_importances_"):
+        feature_importance = model.feature_importances_
+    elif hasattr(model, "coef_"):
+        feature_importance = model.coef_[0]
+    
+    # Get model parameters for MLflow logging
+    model_params = {}
+    if hasattr(model, "get_params"):
+        model_params = model.get_params()
+    elif model_name in ["xgboost", "lightgbm", "catboost", "randomforest"]:
+        # If model is a wrapper, try to get underlying model's params
+        if hasattr(model, "xgb_model") and hasattr(model.xgb_model, "get_params"):
+            model_params = model.xgb_model.get_params()
+        elif hasattr(model, "lgbm_model") and hasattr(model.lgbm_model, "get_params"):
+            model_params = model.lgbm_model.get_params()
+        else:
+            # Use config as fallback
+            model_params = get_model_config(model_name, tuned)
+
+    # Prepare tags
+    tags = {
+        "model_type": model_name if model_name else type(model).__name__,
+        "tuned": str(tuned)
+    }
+
+    # Create artifact list for MLflow
+    artifact_paths = []
+
+    # Log model to MLflow
+    log_model_metrics(
+        run_id=run_id,
+        model_name=model_name if model_name else type(model).__name__,
+        metrics=metrics,
+        params=model_params,
+        tags=tags,
+        artifacts=artifact_paths
+    )
+
+    return model, metrics, feature_importance
 
 
 def save_model(model, model_name, tuned=False):
@@ -451,6 +493,9 @@ def plot_feature_importance(model, feature_names, model_name):
     filepath = os.path.join(figures_dir, filename)
     plt.savefig(filepath)
     logger.info(f"Feature importance plot saved to {filepath}")
+    
+    # Add filepath to artifacts for MLflow logging
+    return filepath
 
 
 def plot_confusion_matrix(model, X_val, y_val, model_name):
@@ -530,9 +575,12 @@ def plot_confusion_matrix(model, X_val, y_val, model_name):
     filepath = os.path.join(figures_dir, filename)
     plt.savefig(filepath)
     logger.info(f"Confusion matrix plot saved to {filepath}")
+    
+    # Return filepath for MLflow logging
+    return filepath
 
 
-def evaluate_model_on_test(model, X_test, y_test, model_name):
+def evaluate_model_on_test(model, X_test, y_test, model_name, run_id=None):
     """Evaluate model on test set."""
     logger.info(f"Evaluating {model_name} on test set")
 
@@ -614,6 +662,13 @@ def evaluate_model_on_test(model, X_test, y_test, model_name):
     # Print classification report
     logger.info("\nTest Classification Report:")
     logger.info(classification_report(y_test, y_pred))
+    
+    # Log test metrics to MLflow if run_id is provided
+    if run_id:
+        log_model_metrics(
+            run_id=run_id,
+            metrics=metrics
+        )
 
     return metrics
 
@@ -651,12 +706,17 @@ def save_results(model_name, val_metrics, test_metrics, tuned=False):
     # Save to CSV
     results_df.to_csv(filepath, index=False)
     logger.info(f"Results saved to {filepath}")
+    
+    return filepath
 
 
 def main():
     """Main function to train and evaluate models."""
     # Create necessary directories
     create_directories()
+    
+    # Set up MLflow tracking
+    setup_mlflow()
 
     # Load data
     X_train, y_train, X_val, y_val, X_test, y_test = load_data()
@@ -666,8 +726,15 @@ def main():
 
     # Get model types from config
     config = load_config()
-
     model_types = list(config.get("models", {}).keys())
+
+    # Dict to store best model info
+    best_models = {
+        "model_name": None,
+        "model": None,
+        "f1_score": 0,
+        "tuned": False
+    }
 
     # Loop through models
     for model_name in model_types:
@@ -675,6 +742,9 @@ def main():
 
         # Process baseline model
         logger.info(f"Training baseline {model_name} model")
+
+        # Create MLflow run for this model
+        run_id = None
 
         # Handle CatBoost specially
         cat_features = None
@@ -687,22 +757,50 @@ def main():
         else:
             model = get_model(model_name, tuned=False)
 
-        # Train the model
-        model, val_metrics = train_model(model, X_train, y_train, X_val, y_val, cat_features)
+# Train the model and get MLflow run ID
+        model, val_metrics, feature_importance = train_model(
+            model, X_train, y_train, X_val, y_val, 
+            cat_features=cat_features, 
+            model_name=f"{model_name}_baseline",
+            tuned=False
+        )
 
         # Save baseline model
         model_path = save_model(model, model_name, tuned=False)
         logger.info(f"Saved baseline model at {model_path}")
 
         # Plot feature importance and confusion matrix
-        plot_feature_importance(model, feature_names, f"{model_name}_baseline")
-        plot_confusion_matrix(model, X_val, y_val, f"{model_name}_baseline")
+        importance_path = plot_feature_importance(model, feature_names, f"{model_name}_baseline")
+        cm_path = plot_confusion_matrix(model, X_val, y_val, f"{model_name}_baseline")
+        
+        # Create list of artifacts for MLflow
+        artifacts = []
+        if importance_path:
+            artifacts.append(importance_path)
+        if cm_path:
+            artifacts.append(cm_path)
 
-        # Evaluate on test set
+        # Evaluate on test set and log results to the same MLflow run
         test_metrics = evaluate_model_on_test(model, X_test, y_test, f"{model_name}_baseline")
 
-        # Save results
-        save_results(model_name, val_metrics, test_metrics, tuned=False)
+        # Save results CSV
+        results_path = save_results(model_name, val_metrics, test_metrics, tuned=False)
+        if results_path:
+            artifacts.append(results_path)
+            
+        # Log artifacts to MLflow
+        if artifacts:
+            log_model_metrics(
+                model_name=f"{model_name}_baseline",
+                artifacts=artifacts
+            )
+
+        # Check if this is the best model so far
+        if val_metrics["f1"] > best_models["f1_score"]:
+            best_models["model_name"] = model_name
+            best_models["model"] = model
+            best_models["f1_score"] = val_metrics["f1"]
+            best_models["tuned"] = False
 
         # Process tuned model
         logger.info(f"Training tuned {model_name} model")
@@ -719,23 +817,73 @@ def main():
             tuned_model = get_model(model_name, tuned=True)
 
         # Train the model
-        tuned_model, tuned_val_metrics = train_model(tuned_model, X_train, y_train, X_val, y_val, cat_features)
+        tuned_model, tuned_val_metrics, tuned_feature_importance = train_model(
+            tuned_model, X_train, y_train, X_val, y_val, 
+            cat_features=cat_features,
+            model_name=f"{model_name}_tuned",
+            tuned=True
+        )
 
         # Save tuned model
         tuned_model_path = save_model(tuned_model, model_name, tuned=True)
         logger.info(f"Saved tuned_model at {tuned_model_path}")
 
         # Plot feature importance and confusion matrix
-        plot_feature_importance(tuned_model, feature_names, f"{model_name}_tuned")
-        plot_confusion_matrix(tuned_model, X_val, y_val, f"{model_name}_tuned")
+        tuned_importance_path = plot_feature_importance(tuned_model, feature_names, f"{model_name}_tuned")
+        tuned_cm_path = plot_confusion_matrix(tuned_model, X_val, y_val, f"{model_name}_tuned")
+        
+        # Create list of artifacts for MLflow
+        tuned_artifacts = []
+        if tuned_importance_path:
+            tuned_artifacts.append(tuned_importance_path)
+        if tuned_cm_path:
+            tuned_artifacts.append(tuned_cm_path)
 
-        # Evaluate on test set
+        # Evaluate on test set and log results
         tuned_test_metrics = evaluate_model_on_test(tuned_model, X_test, y_test, f"{model_name}_tuned")
 
         # Save results
-        save_results(model_name, tuned_val_metrics, tuned_test_metrics, tuned=True)
+        tuned_results_path = save_results(model_name, tuned_val_metrics, tuned_test_metrics, tuned=True)
+        if tuned_results_path:
+            tuned_artifacts.append(tuned_results_path)
+            
+        # Log artifacts to MLflow
+        if tuned_artifacts:
+            log_model_metrics(
+                model_name=f"{model_name}_tuned",
+                artifacts=tuned_artifacts
+            )
+
+        # Check if this is the best model so far
+        if tuned_val_metrics["f1"] > best_models["f1_score"]:
+            best_models["model_name"] = model_name
+            best_models["model"] = tuned_model
+            best_models["f1_score"] = tuned_val_metrics["f1"]
+            best_models["tuned"] = True
 
         logger.info(f"Completed processing {model_name} models")
+
+    # Log the best model to MLflow model registry
+    if best_models["model"] is not None:
+        best_model_name = f"{best_models['model_name']}_{'tuned' if best_models['tuned'] else 'baseline'}"
+        logger.info(f"Registering best model: {best_model_name} with F1 score: {best_models['f1_score']:.4f}")
+        
+        # Get metrics for best model
+        if best_models["tuned"]:
+            metrics = tuned_val_metrics  # Use the last tuned metrics if that was best
+        else:
+            metrics = val_metrics  # Use the last baseline metrics if that was best
+            
+        # Register model in MLflow
+        model_uri = log_best_model(
+            best_models["model"], 
+            best_model_name, 
+            metrics,
+            feature_names,
+            feature_importance
+        )
+        
+        logger.info(f"Best model registered with URI: {model_uri}")
 
     logger.info("All models trained and evaluated successfully")
 
