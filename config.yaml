@@ -137,3 +137,15 @@ paths:
   figures: 'figures/'
   results: 'results/'
   logs: 'logs/'
+
+# config.yaml
+
+monitoring:
+  reference_data_path: 'val.parquet'
+  production_data_glob: '*.parquet'
+  model_path: 'models/xgboost_automl_tuned.pkl'  
+  thresholds:
+    feature_drift:     0.1
+    target_drift:      0.05
+    prediction_drift:  0.05
+    performance_drop:  0.05
