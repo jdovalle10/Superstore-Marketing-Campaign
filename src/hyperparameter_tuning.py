@@ -13,6 +13,8 @@ from src.utils.config import get_data_paths, get_model_config, get_paths
 from src.utils.mlflow_utils import setup_mlflow, log_model_metrics
 from src.train_model import load_data, get_model, evaluate_model_on_test, save_model
 
+
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -59,8 +61,8 @@ def objective(trial, model_name, X_train, y_train, X_val, y_val):
             'subsample': trial.suggest_float('subsample', 0.6, 1.0),
             'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
             'min_child_samples': trial.suggest_int('min_child_samples', 5, 50),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 1.0, log=True),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0, log=True),
+            'reg_alpha': trial.suggest_float('reg_alpha',  1e-8, 1.0, log=True),
+            'reg_lambda': trial.suggest_float('reg_lambda',  1e-8, 1.0, log=True),
             'random_state': 42
         }
     elif model_name == "catboost":
@@ -286,6 +288,7 @@ def optimize_hyperparameters(model_name, n_trials=20):
         # Train the model with best parameters
         from src.train_model import train_model
         tuned_model, tuned_metrics, tuned_feature_importance = train_model(
+        #tuned_model, tuned_metrics = train_model(
             model, X_train, y_train, X_val, y_val, 
             cat_features=cat_features if model_name == "catboost" else None,
             model_name=f"{model_name}_automl_tuned",

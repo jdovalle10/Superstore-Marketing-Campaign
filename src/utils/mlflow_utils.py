@@ -6,8 +6,8 @@ from pathlib import Path
 import mlflow
 from mlflow.tracking import MlflowClient
 
-from utils.config import get_paths
-
+#from utils.config import get_paths
+from .config import get_paths
 
 logger = logging.getLogger(__name__)
 
@@ -68,74 +68,51 @@ def setup_mlflow():
 
 def log_model_metrics(run_id=None, model_name=None, metrics=None, params=None, tags=None, artifacts=None):
     """
-    Log model metrics to MLflow.
-    
-    Parameters:
-        run_id (str, optional): Existing run ID to log to
-        model_name (str): Name of the model
-        metrics (dict): Dictionary of metrics to log
-        params (dict, optional): Dictionary of parameters to log
-        tags (dict, optional): Dictionary of tags to log
-        artifacts (dict, optional): Dictionary of artifacts to log {name: path}
-    
-    Returns:
-        str: MLflow run ID
+    Log model metrics to MLflow, using nested runs if one is already active.
     """
-    # Start new run or use existing
-    if run_id:
-        with mlflow.start_run(run_id=run_id):
-            # Log model name as a tag if provided
-            if model_name:
-                mlflow.set_tag("model_name", model_name)
-            
-            # Log additional tags
-            if tags:
-                for key, value in tags.items():
-                    mlflow.set_tag(key, value)
-            
-            # Log parameters
-            if params:
-                mlflow.log_params(params)
-            
-            # Log metrics
-            if metrics:
-                mlflow.log_metrics(metrics)
-            
-            # Log artifacts
-            if artifacts:
-                for artifact_path in artifacts:
-                    mlflow.log_artifact(artifact_path)
-            
-            current_run_id = mlflow.active_run().info.run_id
-            logger.info(f"Updated run {current_run_id} with metrics for {model_name}")
-            return current_run_id
+    # Check for existing active run
+    active = mlflow.active_run()
+
+    # Decide how to start
+    if active is None:
+        # No run yet: either resume by run_id or start a fresh top‐level run
+        if run_id:
+            run = mlflow.start_run(run_id=run_id)
+        else:
+            run = mlflow.start_run(run_name=model_name)
     else:
-        with mlflow.start_run(run_name=model_name):
-            # Log model name as a tag
-            if model_name:
-                mlflow.set_tag("model_name", model_name)
-            
-            # Log additional tags
-            if tags:
-                for key, value in tags.items():
-                    mlflow.set_tag(key, value)
-            
-            # Log parameters
-            if params:
-                mlflow.log_params(params)
-            
-            # Log metrics
-            if metrics:
-                mlflow.log_metrics(metrics)
-            
-            # Log artifacts
-            if artifacts:
-                for artifact_path in artifacts:
-                    mlflow.log_artifact(artifact_path)
-            
-            current_run_id = mlflow.active_run().info.run_id
-            logger.info(f"Logged metrics for {model_name} to MLflow with run ID: {current_run_id}")
-            return current_run_id
+        # Already inside a run (e.g. your Optuna wrapper) -> start a nested run
+        run = mlflow.start_run(nested=True, run_name=model_name)
+
+    with run:
+        # Optional: tag the run with the model name
+        if model_name:
+            mlflow.set_tag("model_name", model_name)
+
+        # Log any user‐passed tags
+        if tags:
+            mlflow.set_tags(tags)
+
+        # Log parameters
+        if params:
+            mlflow.log_params(params)
+
+        # Log metrics
+        if metrics:
+            mlflow.log_metrics(metrics)
+
+        # Log artifacts
+        if artifacts:
+            for path in artifacts:
+                mlflow.log_artifact(path)
+
+        current_run_id = mlflow.active_run().info.run_id
+        logger.info(
+            f"{'Nested' if active else 'Top‐level'} run {current_run_id} "
+            f"logged metrics for {model_name}"
+        )
+        return current_run_id
+
 
 
 def log_best_model(model, model_name, metrics, feature_names=None, feature_importance=None):

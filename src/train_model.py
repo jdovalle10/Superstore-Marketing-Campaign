@@ -26,16 +26,27 @@ from sklearn.metrics import (
 from xgboost import XGBClassifier
 
 # Import configuration utilities
-from utils.config import (
-    create_directories,
+# from utils.config import (
+#     create_directories,
+#     get_data_paths,
+#     get_model_config,
+#     get_paths,
+#     load_config,
+# )
+# Change to run directly with poetry
+from src.utils.config import (
+    load_config,
     get_data_paths,
     get_model_config,
+    get_training_config,
     get_paths,
-    load_config,
+    create_directories
 )
 
+
 # Import MLflow utilities
-from utils.mlflow_utils import setup_mlflow, log_model_metrics, log_best_model
+#from utils.mlflow_utils import setup_mlflow, log_model_metrics, log_best_model
+from src.utils.mlflow_utils import setup_mlflow, log_model_metrics, log_best_model
 
 # Set up logging
 logging.basicConfig(
