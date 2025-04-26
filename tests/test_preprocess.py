@@ -52,3 +52,13 @@ def test_apply_recategorization(monkeypatch):
     result = preprocess.apply_recategorization(df.copy())
     # a→A, b→B, c stays 'c'
     assert result['col'].tolist() == ['A', 'B', 'c']
+
+
+def test_load_data(tmp_path, monkeypatch):
+    df = pd.DataFrame({'x': [1, 2, 3]})
+    file = tmp_path / 'data.csv'
+    df.to_csv(file, index=False)
+    monkeypatch.setattr(preprocess, 'get_data_paths', lambda: {"raw": str(file)})
+    loaded = preprocess.load_data()
+    # Should load exactly what we wrote
+    pd.testing.assert_frame_equal(loaded.reset_index(drop=True), df)
