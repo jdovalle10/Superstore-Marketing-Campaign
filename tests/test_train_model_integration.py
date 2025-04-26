@@ -1,4 +1,4 @@
-# tests/test_train_model_integration.py
+# tests/test_train_model_integration.py integrated test for the model training pipeline and evaluation
 
 import os
 import numpy as np
