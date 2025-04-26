@@ -38,3 +38,17 @@ def test_handle_missing_values_drop_and_impute(monkeypatch):
     result = preprocess.handle_missing_values(df.copy())
     assert 'B' not in result.columns
     assert result['A'].iloc[1] == 2.0
+
+def test_apply_recategorization(monkeypatch):
+    config = {
+        "feature_engineering": {
+            "recategorization": {
+                "col": {"a": "A", "b": "B"}
+            }
+        }
+    }
+    monkeypatch.setattr(preprocess, 'get_preprocessing_config', lambda: config)
+    df = pd.DataFrame({'col': ['a', 'b', 'c']})
+    result = preprocess.apply_recategorization(df.copy())
+    # a→A, b→B, c stays 'c'
+    assert result['col'].tolist() == ['A', 'B', 'c']
